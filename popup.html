@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --success: #34a853;
+      --error: #ea4335;
+      --bg: #f8f9fa;
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      width: 320px;
+      margin: 0;
+      background: var(--bg);
+      color: #3c4043;
+    }
+    .header {
+      background: #fff;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--primary);
+      margin-bottom: 5px;
+    }
+    .version { font-size: 11px; color: #70757a; }
+    
+    .content { padding: 20px; }
+    
+    .status-card {
+      background: #fff;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #ccc;
+    }
+    .status-dot.ok { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.error { background: var(--error); box-shadow: 0 0 8px var(--error); }
+    
+    .label { font-size: 12px; font-weight: bold; color: #5f6368; margin-bottom: 5px; display: block; }
+    
+    select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #dadce0;
+      background: #fff;
+      margin-bottom: 20px;
+      outline: none;
+    }
+    
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    
+    .btn {
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: #1558b0; transform: translateY(-1px); }
+    .btn-outline { background: #fff; border: 1px solid #dadce0; color: #3c4043; }
+    .btn-outline:hover { background: #f1f3f4; }
+
+    .footer {
+      padding: 15px;
+      font-size: 11px;
+      text-align: center;
+      color: #70757a;
+      background: #fff;
+      border-top: 1px solid #eee;
+    }
+    a { color: var(--primary); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">Romolo AI</div>
+    <div class="version">Versione 2.0 • Pro Edition</div>
+  </div>
+
+  <div class="content">
+    <div class="status-card">
+      <div id="statusDot" class="status-dot"></div>
+      <div id="statusText">Verifica configurazione...</div>
+    </div>
+
+    <label class="label">MODELLO ATTIVO</label>
+    <select id="modelQuickSelect">
+      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+    </select>
+
+    <div class="actions">
+      <button id="openOptions" class="btn btn-primary">⚙️ Opzioni</button>
+      <button id="testBtn" class="btn btn-outline">⚡ Test</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    Bisogno di aiuto? <a href="https://aistudio.google.com/app/apikey" target="_blank">Ottieni API Key</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

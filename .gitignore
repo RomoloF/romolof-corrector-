@@ -1,0 +1,18 @@
+# File Sensibili
+api_key.txt
+config.json
+
+# File Temporanei e Log
+/tmp/
+*.log
+romolo_input.txt
+romolo_result.txt
+
+# Pacchetti di distribuzione (ZIP)
+*.zip
+Romolo_Suite_Dist/
+store_upload/
+
+# Python cache
+__pycache__/
+*.pyc

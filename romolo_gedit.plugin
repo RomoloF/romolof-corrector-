@@ -1,0 +1,9 @@
+[Plugin]
+Loader=python3
+Module=romolo_gedit
+IAge=3
+Name=Romolo AI
+Description=Analizza e corregge il testo con Gemini
+Authors=Romolo
+Copyright=Copyright © 2026 Romolo
+Website=https://example.com
