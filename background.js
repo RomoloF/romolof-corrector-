@@ -26,48 +26,46 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     try {
-      // 2. Recupero impostazioni con await (più pulito)
       const result = await chrome.storage.sync.get(['geminiApiKey', 'geminiModel']);
-      const apiKey = result.geminiApiKey;
-      const model = result.geminiModel || 'gemini-2.0-flash';
+      let apiKey = result.geminiApiKey;
+      let preferredModel = result.geminiModel || 'gemini-2.0-flash';
 
       if (!apiKey) {
-        notifyUser("Configurazione Mancante", "API Key non trovata. Vai nelle opzioni dell'estensione.");
+        notifyUser("Configurazione Mancante", "API Key non trovata.");
         return;
       }
       
-      // 3. Cursore wait (con catch per evitare crash)
-      chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => document.body.style.cursor = 'wait'
-      }).catch(() => {});
+      const modelsToTry = [preferredModel, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+      // Rimuovi duplicati
+      const uniqueModels = [...new Set(modelsToTry)];
 
-      console.log("Richiesta inviata a:", model);
+      const tryModelsSequentially = async (index) => {
+        if (index >= uniqueModels.length) throw new Error("Tutti i modelli hanno la quota esaurita.");
+        
+        const currentModel = uniqueModels[index];
+        const prompt = `Agisci come Editor Senior. Analizza il testo e produci versioni perfezionate in JSON: { "it": {...}, "en": {...} }. Testo: "${selectedText}"`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+        
+        try {
+          const resp = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+          });
 
-      const prompt = `
-        Agisci come un Editor Senior. Analizza il testo e produci versioni perfezionate.
-        Restituisci ESCLUSIVAMENTE un oggetto JSON valido:
-        {
-          "it": { "normal": "...", "formal": "...", "technical": "..." },
-          "en": { "normal": "...", "formal": "...", "technical": "..." }
+          if (resp.status === 429) return tryModelsSequentially(index + 1);
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error?.message || "Errore API");
+          }
+          return resp.json();
+        } catch (e) {
+          if (e.message.includes("429")) return tryModelsSequentially(index + 1);
+          throw e;
         }
-        Testo: "${selectedText}"
-      `;
+      };
 
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-
-      if (!response.ok) {
-         const err = await response.json().catch(() => ({}));
-         throw new Error(err.error?.message || "Errore API Google");
-      }
-
-      const data = await response.json();
+      const data = await tryModelsSequentially(0);
       const rawText = data.candidates[0].content.parts[0].text;
       
       // Estrazione JSON robusta

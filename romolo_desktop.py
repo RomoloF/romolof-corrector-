@@ -121,38 +121,61 @@ class RomoloApp:
         threading.Thread(target=self.analyze_text, args=(self.original_text,), daemon=True).start()
 
     def analyze_text(self, text):
-        prompt = f"""
-          Agisci come Editor Senior. Riscrivi il testo con Self-Correction.
-          Output richiesto: JSON con chiavi "it" e "en", ognuna con "normal", "formal", "technical".
-          Testo: "{text}"
-          Restituisci SOLO il JSON puro.
-        """
-        try:
-            genai.configure(api_key=self.config["api_key"])
-            model = genai.GenerativeModel(self.model_var.get())
-            response = model.generate_content(prompt)
-            
-            if not response.text:
-                raise Exception("L'AI ha risposto con un testo vuoto (possibile blocco sicurezza).")
+        genai.configure(api_key=self.config["api_key"])
+        
+        def get_all_working_models():
+            try:
+                available = []
+                for m in genai.list_models():
+                    if 'generateContent' in m.supported_generation_methods:
+                        name = m.name.replace('models/', '')
+                        available.append(name)
+                # Ordina: preferenza per versioni più nuove e flash
+                available.sort(key=lambda x: ("2.5" in x, "2.0" in x, "1.5" in x, "flash" in x), reverse=True)
+                return available
+            except:
+                return [self.model_var.get(), "gemini-2.0-flash", "gemini-1.5-flash"]
 
-            # Pulizia avanzata del JSON
-            raw = response.text.strip()
-            # Rimuove blocchi markdown ```json ... ```
-            raw = re.sub(r'```json\s*|\s*```', '', raw)
-            # Cerca il primo { e l'ultimo }
-            start = raw.find('{')
-            end = raw.rfind('}')
-            if start != -1 and end != -1:
-                raw = raw[start:end+1]
-            
-            self.variants = json.loads(raw)
-            self.root.after(0, lambda: self.set_style('normal'))
-            self.root.after(0, lambda: self.status_label.config(text="✅ Analisi completata", fg="green"))
-        except Exception as e:
-            err = str(e)
-            self.root.after(0, lambda: self.status_label.config(text="❌ Errore", fg="red"))
-            self.root.after(0, lambda: self.text_area.delete("1.0", tk.END))
-            self.root.after(0, lambda: self.text_area.insert("1.0", f"ERRORE ANALISI:\n{err}\n\nRisposta AI:\n{response.text if 'response' in locals() else 'Nessuna'}"))
+        def attempt_analysis(models_to_try, idx):
+            if idx >= len(models_to_try):
+                self.root.after(0, lambda: self.status_label.config(text="❌ Quota esaurita su tutti i modelli", fg="red"))
+                return
+
+            current_model_name = models_to_try[idx]
+            self.root.after(0, lambda: self.status_label.config(text=f"⏳ Provo {current_model_name}...", fg="blue"))
+
+            prompt = f"""
+              Agisci come Editor Senior. Riscrivi il testo con Self-Correction.
+              Output richiesto: JSON con chiavi "it" e "en", ognuna con "normal", "formal", "technical".
+              Testo: "{text}"
+              Restituisci SOLO il JSON puro.
+            """
+            try:
+                model = genai.GenerativeModel(current_model_name)
+                response = model.generate_content(prompt)
+                
+                if not response.text: raise Exception("Vuoto")
+
+                raw = response.text.strip()
+                raw = re.sub(r'```json\s*|\s*```', '', raw)
+                start, end = raw.find('{'), raw.rfind('}')
+                if start != -1 and end != -1: raw = raw[start:end+1]
+                
+                self.variants = json.loads(raw)
+                self.root.after(0, lambda: self.model_var.set(current_model_name))
+                self.root.after(0, lambda: self.set_style('normal'))
+                self.root.after(0, lambda: self.status_label.config(text=f"✅ Pronto ({current_model_name})", fg="green"))
+            except Exception as e:
+                if "429" in str(e) or "Vuoto" in str(e):
+                    self.root.after(0, lambda: attempt_analysis(models_to_try, idx + 1))
+                else:
+                    self.root.after(0, lambda: self.status_label.config(text="❌ Errore API", fg="red"))
+
+        def run_full_scan():
+            models = get_all_working_models()
+            attempt_analysis(models, 0)
+
+        threading.Thread(target=run_full_scan, daemon=True).start()
 
     def auto_find_working_model(self):
         self.text_area.delete("1.0", tk.END)
