@@ -18,16 +18,13 @@ INPUT_FILE = "/tmp/romolo_input.txt"
 RESULT_FILE = "/tmp/romolo_result.txt"
 
 def load_config():
-    defaults = {"api_key": "", "model": "gemini-1.5-flash", "available_models": ["gemini-1.5-flash", "gemini-pro-latest"]}
+    defaults = {"api_key": "", "deepseek_key": "", "model": "gemini-2.0-flash", "available_models": []}
     path_key = "/home/romolo/Scrivania/gemini-corrector/api_key.txt"
+    path_ds = "/home/romolo/Scrivania/gemini-corrector/api_key_deepseek.txt"
     if os.path.exists(path_key):
-        with open(path_key, "r") as f:
-            defaults["api_key"] = f.read().strip()
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return {**defaults, **json.load(f)}
-        except: pass
+        with open(path_key, "r") as f: defaults["api_key"] = f.read().strip()
+    if os.path.exists(path_ds):
+        with open(path_ds, "r") as f: defaults["deepseek_key"] = f.read().strip()
     return defaults
 
 def save_config(config):
@@ -38,13 +35,15 @@ class RomoloApp:
     def __init__(self, root, selected_text):
         self.root = root
         self.root.title("Romolo AI Desktop")
-        self.root.geometry("800x650")
+        self.root.geometry("900x700")
         self.root.attributes('-topmost', True)
         self.config = load_config()
         self.variants = {}
+        self.all_results = {} # Memorizza i risultati per ogni modello: {nome_modello: varianti}
         self.current_lang = 'it'
         self.current_style = 'normal'
         self.original_text = selected_text
+        self.model_status = {}
         self.setup_ui()
         if self.config["api_key"]:
             self.start_analysis()
@@ -61,8 +60,6 @@ class RomoloApp:
         self.model_menu.pack(side="left", padx=5)
         
         tk.Button(header, text="🚀 Trova Modello Libero", command=self.auto_find_working_model, bg="#34a853", fg="white", relief="flat").pack(side="left", padx=5)
-        
-        # Nuovo tasto Incolla
         tk.Button(header, text="📋 Incolla", command=self.paste_from_clipboard, bg="#fbbc04", fg="black", relief="flat").pack(side="left", padx=5)
 
         lang_frame = tk.Frame(header, bg="#f1f3f4")
@@ -77,10 +74,12 @@ class RomoloApp:
         self.tabs = {}
         modalita = [
             ('normal', 'Normale'), ('formal', 'Formale'), ('technical', 'Tecnico'),
-            ('ironic', 'Ironico'), ('funny', 'Comico'), ('debate', 'Contraddittorio')
+            ('ironic', 'Ironico'), ('funny', 'Comico'), ('debate', 'Critico'),
+            ('models_list', '📡 STATO MODELLI')
         ]
         for s_id, label in modalita:
             btn = tk.Button(tab_frame, text=label, command=lambda s=s_id: self.set_style(s), relief="flat")
+            if s_id == 'models_list': btn.config(bg="#e8f0fe", fg="#1a73e8")
             btn.pack(side="left", expand=True, fill="x")
             self.tabs[s_id] = btn
 
@@ -97,8 +96,6 @@ class RomoloApp:
         txt = pyperclip.paste()
         if txt:
             self.original_text = txt
-            self.text_area.delete("1.0", tk.END)
-            self.text_area.insert("1.0", txt)
             self.start_analysis()
 
     def set_lang(self, lang):
@@ -110,112 +107,131 @@ class RomoloApp:
     def set_style(self, style):
         self.current_style = style
         for s_id, btn in self.tabs.items():
-            btn.config(bg="white" if s_id == style else "#e8eaed", font=("Arial", 10, "bold" if s_id == style else "normal"))
+            is_active = (s_id == style)
+            btn.config(bg="white" if is_active else "#e8eaed", font=("Arial", 10, "bold" if is_active else "normal"))
         self.refresh_display()
 
     def refresh_display(self):
-        if self.variants:
+        self.text_area.delete("1.0", tk.END)
+        if self.current_style == 'models_list':
+            self.text_area.insert(tk.END, "📡 MONITORAGGIO MODELLI GEMINI\n", "title")
+            self.text_area.insert(tk.END, "(Clicca su un modello per forzarne l'uso)\n", "subtitle")
+            self.text_area.insert(tk.END, "------------------------------------------\n\n")
+            
+            for m_name, status in sorted(self.model_status.items()):
+                if status == "ok":
+                    icon, color = "🟢 FUNZIONANTE", "green"
+                elif status == "error":
+                    icon, color = "🔴 QUOTA ESAURITA", "red"
+                elif status == "testing":
+                    icon, color = "🔵 IN TEST...", "blue"
+                else:
+                    icon, color = "⚪ DISPONIBILE", "gray"
+                
+                tag_name = f"model_{m_name}"
+                self.text_area.insert(tk.END, f"{icon.ljust(18)} | ", color)
+                self.text_area.insert(tk.END, f"{m_name}\n", tag_name)
+                
+                self.text_area.tag_configure(tag_name, foreground="#1a73e8", underline=True)
+                self.text_area.tag_bind(tag_name, "<Button-1>", lambda e, n=m_name: self.select_model_manually(n))
+                self.text_area.tag_bind(tag_name, "<Enter>", lambda e: self.text_area.config(cursor="hand2"))
+                self.text_area.tag_bind(tag_name, "<Leave>", lambda e: self.text_area.config(cursor=""))
+
+            self.text_area.tag_configure("title", font=("Arial", 12, "bold"))
+            self.text_area.tag_configure("subtitle", font=("Arial", 9, "italic"), foreground="#5f6368")
+            self.text_area.tag_configure("green", foreground="#34a853")
+            self.text_area.tag_configure("red", foreground="#ea4335")
+            self.text_area.tag_configure("blue", foreground="#1a73e8")
+            self.text_area.tag_configure("gray", foreground="gray")
+        elif self.variants:
             txt = self.variants.get(self.current_lang, {}).get(self.current_style, "")
-            self.text_area.delete("1.0", tk.END)
             self.text_area.insert("1.0", txt)
 
+    def select_model_manually(self, m_name):
+        self.model_var.set(m_name)
+        # Se abbiamo già il risultato per questo modello, caricalo subito
+        if m_name in self.all_results:
+            self.variants = self.all_results[m_name]
+            self.status_label.config(text=f"✅ Visualizzando: {m_name}", fg="green")
+            self.set_style('normal')
+        else:
+            self.status_label.config(text=f"⏳ Analisi singola: {m_name}", fg="blue")
+            self.start_analysis()
+
     def start_analysis(self):
-        self.text_area.delete("1.0", tk.END)
-        self.text_area.insert("1.0", f"⏳ Analizzando con {self.model_var.get()}...")
+        if self.current_style != 'models_list':
+            self.text_area.delete("1.0", tk.END)
+            self.text_area.insert("1.0", "⏳ Ricerca modelli e analisi in corso...")
         threading.Thread(target=self.analyze_text, args=(self.original_text,), daemon=True).start()
 
     def analyze_text(self, text):
-        genai.configure(api_key=self.config["api_key"])
-        
-        def get_all_working_models():
-            try:
-                available = []
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods:
-                        name = m.name.replace('models/', '')
-                        available.append(name)
-                # Ordina: preferenza per versioni più nuove e flash
-                available.sort(key=lambda x: ("2.5" in x, "2.0" in x, "1.5" in x, "flash" in x), reverse=True)
-                return available
-            except:
-                return [self.model_var.get(), "gemini-2.0-flash", "gemini-1.5-flash"]
+        # Modelli da testare: Gemini + DeepSeek Free
+        gemini_models = []
+        try:
+            genai.configure(api_key=self.config["api_key"])
+            gemini_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            gemini_models.sort(key=lambda x: ("2.0" in x, "1.5" in x), reverse=True)
+        except: pass
 
-        def attempt_analysis(models_to_try, idx):
-            if idx >= len(models_to_try):
-                self.root.after(0, lambda: self.status_label.config(text="❌ Quota esaurita su tutti i modelli", fg="red"))
+        ds_models = ["deepseek/deepseek-r1:free", "deepseek/deepseek-chat:free", "google/gemini-2.0-flash-exp:free"]
+        
+        all_models = gemini_models + ds_models
+        for m in all_models: 
+            if m not in self.model_status: self.model_status[m] = "unknown"
+
+        def attempt(models, idx):
+            if idx >= len(models):
+                self.root.after(0, lambda: self.status_label.config(text="🏁 Scansione completata", fg="gray"))
                 return
 
-            current_model_name = models_to_try[idx]
-            self.root.after(0, lambda: self.status_label.config(text=f"⏳ Provo {current_model_name}...", fg="blue"))
+            m_name = models[idx]
+            self.model_status[m_name] = "testing"
+            self.root.after(0, self.refresh_display)
 
-            prompt = f"""
-              Agisci come Editor Senior e Scrittore Creativo. Riscrivi il testo fornito.
-              Output richiesto: UN SOLO OGGETTO JSON con chiavi "it" e "en".
-              Ogni lingua deve avere queste 6 varianti:
-              - "normal": Corretto e fluido.
-              - "formal": Professionale e diplomatico.
-              - "technical": Preciso e rigoroso.
-              - "ironic": Sarcastico e pungente.
-              - "funny": Divertente e scherzoso.
-              - "debate": Argomentazione contraria o critica al testo originale.
-              
-              Testo da elaborare: "{text}"
-              Restituisci ESCLUSIVAMENTE il JSON puro.
-            """
+            prompt = f"Riscrivi in 6 varianti JSON (it, en): normal, formal, technical, ironic, funny, debate. Testo: {text}"
+            
             try:
-                model = genai.GenerativeModel(current_model_name)
-                response = model.generate_content(prompt)
-                
-                if not response.text: raise Exception("Vuoto")
-
-                raw = response.text.strip()
-                raw = re.sub(r'```json\s*|\s*```', '', raw)
-                start, end = raw.find('{'), raw.rfind('}')
-                if start != -1 and end != -1: raw = raw[start:end+1]
-                
-                self.variants = json.loads(raw)
-                self.root.after(0, lambda: self.model_var.set(current_model_name))
-                self.root.after(0, lambda: self.set_style('normal'))
-                self.root.after(0, lambda: self.status_label.config(text=f"✅ Pronto ({current_model_name})", fg="green"))
-            except Exception as e:
-                err_msg = str(e)
-                if "429" in err_msg or "Vuoto" in err_msg:
-                    self.root.after(0, lambda: attempt_analysis(models_to_try, idx + 1))
+                # LOGICA GEMINI
+                if "/" not in m_name:
+                    model = genai.GenerativeModel(m_name)
+                    response = model.generate_content(prompt)
+                    res_text = response.text
+                # LOGICA DEEPSEEK (OpenRouter)
                 else:
-                    # Copia l'errore negli appunti automaticamente
-                    try: pyperclip.copy(err_msg)
-                    except: pass
-                    
-                    self.root.after(0, lambda: self.status_label.config(text="❌ Errore (Copiato negli appunti)", fg="red"))
-                    self.root.after(0, lambda: self.text_area.delete("1.0", tk.END))
-                    self.root.after(0, lambda: self.text_area.insert("1.0", f"⚠️ ERRORE API DETTAGLIATO (Copiato negli appunti):\n\n{err_msg}"))
+                    if not self.config["deepseek_key"]: raise Exception("No DS Key")
+                    import requests
+                    resp = requests.post(
+                        url="https://openrouter.ai/api/v1/chat/completations",
+                        headers={"Authorization": f"Bearer {self.config['deepseek_key']}"},
+                        data=json.dumps({
+                            "model": m_name,
+                            "messages": [{"role": "user", "content": prompt}]
+                        })
+                    )
+                    res_text = resp.json()['choices'][0]['message']['content']
 
-        def run_full_scan():
-            models = get_all_working_models()
-            attempt_analysis(models, 0)
+                raw = re.sub(r'```json\s*|\s*```', '', res_text.strip())
+                start, end = raw.find('{'), raw.rfind('}')
+                res = json.loads(raw[start:end+1])
+                
+                self.all_results[m_name] = res
+                self.model_status[m_name] = "ok"
+                if not self.variants:
+                    self.variants = res
+                    self.root.after(0, lambda: [self.model_var.set(m_name), self.set_style('normal')])
+                
+                self.root.after(0, self.refresh_display)
+                attempt(models, idx + 1)
 
-        threading.Thread(target=run_full_scan, daemon=True).start()
+            except Exception as e:
+                self.model_status[m_name] = "error"
+                self.root.after(0, self.refresh_display)
+                attempt(models, idx + 1)
+
+        threading.Thread(target=lambda: attempt(all_models, 0), daemon=True).start()
 
     def auto_find_working_model(self):
-        self.text_area.delete("1.0", tk.END)
-        self.text_area.insert("1.0", "🚀 Ricerca modello libero...")
-        def run():
-            try:
-                genai.configure(api_key=self.config["api_key"])
-                models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                for m_name in models:
-                    try:
-                        genai.GenerativeModel(m_name).generate_content("test")
-                        self.config["model"] = m_name
-                        save_config(self.config)
-                        self.root.after(0, lambda n=m_name: self.model_var.set(n))
-                        self.root.after(0, self.start_analysis)
-                        return
-                    except: continue
-                self.root.after(0, lambda: messagebox.showerror("Errore", "Nessun modello libero."))
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Errore", str(e)))
-        threading.Thread(target=run, daemon=True).start()
+        self.start_analysis()
 
     def apply_action(self):
         text = self.text_area.get("1.0", tk.END).strip()
@@ -225,25 +241,15 @@ class RomoloApp:
 
 if __name__ == "__main__":
     txt = ""
-    # 1. Controllo se arriva da LibreOffice
     if os.path.exists(INPUT_FILE):
-        with open(INPUT_FILE, "r", encoding="utf-8") as f:
-            txt = f.read()
+        with open(INPUT_FILE, "r", encoding="utf-8") as f: txt = f.read()
         os.remove(INPUT_FILE)
-    # 2. Controllo argomenti riga di comando
-    elif len(sys.argv) > 1:
-        txt = sys.argv[1]
-    # 3. Controllo Appunti
     else:
         try:
-            clipboard_content = pyperclip.paste()
-            if clipboard_content and len(clipboard_content.strip()) > 5:
-                txt = clipboard_content
-        except:
-            pass
-    
-    if not txt: txt = "Scrivi o incolla qui il testo da analizzare..."
-    
+            c = pyperclip.paste()
+            if c and len(c.strip()) > 5: txt = c
+        except: pass
+    if not txt: txt = "Scrivi o incolla qui il testo..."
     root = tk.Tk()
     app = RomoloApp(root, txt)
     root.mainloop()
