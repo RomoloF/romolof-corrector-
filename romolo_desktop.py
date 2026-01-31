@@ -62,6 +62,9 @@ class RomoloApp:
         
         tk.Button(header, text="🚀 Trova Modello", command=self.auto_find_working_model, bg="#34a853", fg="white", relief="flat").pack(side="left", padx=5)
         
+        # Nuovo tasto Incolla
+        tk.Button(header, text="📋 Incolla", command=self.paste_from_clipboard, bg="#fbbc04", fg="black", relief="flat").pack(side="left", padx=5)
+
         lang_frame = tk.Frame(header, bg="#f1f3f4")
         lang_frame.pack(side="right", padx=20)
         self.btn_it = tk.Button(lang_frame, text="🇮🇹 ITA", command=lambda: self.set_lang('it'), relief="flat", bg="#d2e3fc")
@@ -85,6 +88,14 @@ class RomoloApp:
         self.status_label = tk.Label(footer, text="Pronto", fg="#5f6368")
         self.status_label.pack(side="left")
         tk.Button(footer, text="Usa Questa (Sostituisci)", command=self.apply_action, bg="#1a73e8", fg="white", font=("Arial", 10, "bold"), width=25).pack(side="right")
+
+    def paste_from_clipboard(self):
+        txt = pyperclip.paste()
+        if txt:
+            self.original_text = txt
+            self.text_area.delete("1.0", tk.END)
+            self.text_area.insert("1.0", txt)
+            self.start_analysis()
 
     def set_lang(self, lang):
         self.current_lang = lang
@@ -172,12 +183,22 @@ class RomoloApp:
 
 if __name__ == "__main__":
     txt = ""
+    # 1. Controllo se arriva da LibreOffice
     if os.path.exists(INPUT_FILE):
         with open(INPUT_FILE, "r", encoding="utf-8") as f:
             txt = f.read()
         os.remove(INPUT_FILE)
+    # 2. Controllo argomenti riga di comando
     elif len(sys.argv) > 1:
         txt = sys.argv[1]
+    # 3. Controllo Appunti
+    else:
+        try:
+            clipboard_content = pyperclip.paste()
+            if clipboard_content and len(clipboard_content.strip()) > 5:
+                txt = clipboard_content
+        except:
+            pass
     
     if not txt: txt = "Scrivi o incolla qui il testo da analizzare..."
     
