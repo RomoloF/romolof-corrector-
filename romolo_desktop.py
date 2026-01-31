@@ -33,7 +33,7 @@ class RomoloApp:
     def __init__(self, root, selected_text):
         self.root = root
         self.root.title("Romolo AI Desktop")
-        self.root.geometry("900x750")
+        self.root.geometry("950x800")
         self.root.attributes('-topmost', True)
         self.config = load_config()
         self.variants = {}
@@ -93,36 +93,45 @@ class RomoloApp:
         self.status_label.pack(side="left")
         tk.Button(footer, text="Usa Questa (Sostituisci)", command=self.apply_action, bg="#1a73e8", fg="white", font=("Arial", 10, "bold"), width=25).pack(side="right")
 
+    def show_copyable_error(self, title, message):
+        err_win = tk.Toplevel(self.root)
+        err_win.title(title)
+        err_win.geometry("550x450")
+        err_win.attributes('-topmost', True)
+        tk.Label(err_win, text=f"⚠️ {title}", font=("Arial", 12, "bold"), fg="red", pady=10).pack()
+        txt = tk.Text(err_win, wrap="word", padx=10, pady=10, height=15)
+        txt.insert("1.0", message)
+        txt.pack(fill="both", expand=True, padx=10)
+        def copy_close():
+            pyperclip.copy(message)
+            err_win.destroy()
+        tk.Button(err_win, text="📋 Copia Errore e Chiudi", command=copy_close, bg="#1a73e8", fg="white", pady=8).pack(fill="x", padx=10, pady=10)
+
     def run_terminal_fallback(self):
-        self.status_label.config(text="⏳ Avvio Motore Terminale...", fg="#6c757d")
-        self.text_area.delete("1.0", tk.END)
-        self.text_area.insert("1.0", "⏳ Utilizzo gemini-cli in corso...\nQuesta è l'ultima spiaggia.")
-        
+        self.status_label.config(text="⏳ Terminale in corso...", fg="#6c757d")
         def run():
             import subprocess
-            # Prompt molto rigoroso per il terminale
-            prompt = f"Agisci come Editor Senior. Riscrivi in 6 varianti JSON (it, en): normal, formal, technical, ironic, funny, debate. Testo: {self.original_text}. Restituisci SOLO il JSON puro senza commenti."
-            try:
-                # Esegue il comando da terminale chiamando 'gemini'
-                result = subprocess.run(["gemini", prompt], capture_output=True, text=True, timeout=40)
-                res_text = result.stdout
-                
-                if not res_text:
-                    raise Exception("Il terminale non ha restituito alcun testo.")
-
-                raw = re.sub(r'```json\s*|\s*```', '', res_text.strip())
-                start, end = raw.find('{'), raw.rfind('}')
-                if start == -1 or end == -1: raise Exception("Formato JSON non trovato nella risposta del terminale")
-                
-                res = json.loads(raw[start:end+1])
-                self.variants = res
-                self.all_results["Terminale"] = res
-                self.model_status["Terminale"] = "ok"
-                self.root.after(0, lambda: [self.model_var.set("Terminale"), self.set_style('normal'), self.status_label.config(text="✅ Risultato da Terminale", fg="green")])
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Errore Terminale", f"Non è stato possibile avviare o leggere gemini-cli:\n{e}\n\nAssicurati che sia installato correttamente."))
-                self.root.after(0, lambda: self.status_label.config(text="❌ Errore Terminale", fg="red"))
-        
+            prompt = f"Riscrivi in 6 varianti JSON (it, en) con chiavi: normal, formal, technical, ironic, funny, debate. Testo: {self.original_text}. Restituisci SOLO JSON."
+            # Priorità ASSOLUTA alla serie 3
+            terminal_models = ["gemini-3-flash-preview", self.model_var.get(), "gemini-2.0-flash", "gemini-1.5-flash"]
+            terminal_models = list(dict.fromkeys([m for m in terminal_models if m and "/" not in m]))
+            for m_name in terminal_models:
+                self.root.after(0, lambda n=m_name: self.status_label.config(text=f"⏳ Terminale: Provo {n}...", fg="#6c757d"))
+                try:
+                    cmd = ["gemini", "--model", m_name]
+                    result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=60, encoding='utf-8')
+                    if "exhausted" in result.stderr.lower() or not result.stdout: continue
+                    raw = result.stdout.strip()
+                    raw = re.sub(r'```json\s*|\s*```', '', raw)
+                    start, end = raw.find('{'), raw.rfind('}')
+                    res = json.loads(raw[start:end+1])
+                    self.variants = res
+                    self.all_results[m_name] = res
+                    self.model_status[m_name] = "ok"
+                    self.root.after(0, lambda n=m_name: [self.model_var.set(n), self.set_style('normal'), self.status_label.config(text=f"✅ Da Terminale: {n}", fg="green")])
+                    return
+                except: continue
+            self.root.after(0, lambda: self.show_copyable_error("Blocco Totale", "Anche il terminale ha esaurito le quote. Prova DeepSeek Free."))
         threading.Thread(target=run, daemon=True).start()
 
     def regenerate_current(self):
@@ -135,9 +144,7 @@ class RomoloApp:
     def paste_from_clipboard(self):
         try:
             txt = pyperclip.paste()
-            if txt:
-                self.original_text = txt
-                self.start_analysis()
+            if txt: self.original_text = txt; self.start_analysis()
         except: pass
 
     def set_lang(self, lang):
@@ -149,8 +156,7 @@ class RomoloApp:
     def set_style(self, style):
         self.current_style = style
         for s_id, btn in self.tabs.items():
-            is_active = (s_id == style)
-            btn.config(bg="white" if is_active else "#e8eaed", font=("Arial", 10, "bold" if is_active else "normal"))
+            btn.config(bg="white" if s_id == style else "#e8eaed", font=("Arial", 10, "bold" if s_id == style else "normal"))
         self.refresh_display()
 
     def refresh_display(self):
@@ -158,33 +164,20 @@ class RomoloApp:
         if self.current_style == 'models_list':
             self.text_area.insert(tk.END, "📡 MONITORAGGIO MODELLI E QUOTE\n", "title")
             self.text_area.insert(tk.END, "(Clicca su un modello per selezionarlo)\n", "subtitle")
-            self.text_area.insert(tk.END, "------------------------------------------\n\n")
-            
             for m_name, status in sorted(self.model_status.items()):
                 icon = "🟢 FUNZIONANTE" if status == "ok" else "🔴 QUOTA ESAURITA" if status == "error" else "🔵 IN TEST..." if status == "testing" else "⚪ DISPONIBILE"
                 color = "green" if status == "ok" else "red" if status == "error" else "blue" if status == "testing" else "gray"
-                
-                tag_name = f"model_{m_name}"
+                tag = f"m_{m_name}"
                 self.text_area.insert(tk.END, f"{icon.ljust(18)} | ", color)
-                self.text_area.insert(tk.END, f"{m_name}\n", tag_name)
-                self.text_area.tag_configure(tag_name, foreground="#1a73e8", underline=True)
-                self.text_area.tag_bind(tag_name, "<Button-1>", lambda e, n=m_name: self.select_model_manually(n))
-
-            self.text_area.insert(tk.END, "\n\n📊 ANALISI TECNICA ULTIMA CHIAMATA\n", "title")
-            self.text_area.insert(tk.END, "------------------------------------------\n")
+                self.text_area.insert(tk.END, f"{m_name}\n", tag)
+                self.text_area.tag_configure(tag, foreground="#1a73e8", underline=True)
+                self.text_area.tag_bind(tag, "<Button-1>", lambda e, n=m_name: self.select_model_manually(n))
+            self.text_area.insert(tk.END, "\n📊 ANALISI TECNICA QUOTA\n", "title")
             q = self.last_quota_info
-            self.text_area.insert(tk.END, f"Modello: {q['model']}\n")
-            self.text_area.insert(tk.END, f"Limite Totale (RPM): {q['limit']}\n")
-            rem_color = "red" if str(q['remaining']) == "0" else "green"
-            self.text_area.insert(tk.END, "Richieste Rimanenti: ", "bold")
-            self.text_area.insert(tk.END, f"{q['remaining']}\n", rem_color)
-            self.text_area.insert(tk.END, f"Reset Quota in: {q['reset']}\n")
-
+            self.text_area.insert(tk.END, f"Modello: {q['model']}\nRPM: {q['limit']} | Rimanenti: {q['remaining']} | Reset: {q['reset']}\n")
             self.text_area.tag_configure("title", font=("Arial", 11, "bold"))
-            self.text_area.tag_configure("subtitle", font=("Arial", 9, "italic"), foreground="#5f6368")
-            self.text_area.tag_configure("bold", font=("Arial", 10, "bold"))
             self.text_area.tag_configure("green", foreground="#34a853")
-            self.text_area.tag_configure("red", foreground="#ea4335", font=("Arial", 10, "bold"))
+            self.text_area.tag_configure("red", foreground="#ea4335")
             self.text_area.tag_configure("blue", foreground="#1a73e8")
             self.text_area.tag_configure("gray", foreground="gray")
         elif self.variants:
@@ -196,73 +189,62 @@ class RomoloApp:
         if m_name in self.all_results:
             self.variants = self.all_results[m_name]
             self.set_style('normal')
-        else:
-            self.regenerate_current()
+        else: self.regenerate_current()
 
     def start_analysis(self):
-        self.variants = {}
-        self.all_results = {}
+        self.variants = {}; self.all_results = {}
         if self.current_style != 'models_list':
-            self.text_area.delete("1.0", tk.END)
-            self.text_area.insert("1.0", "⏳ Scansione rapida modelli in corso...")
+            self.text_area.delete("1.0", tk.END); self.text_area.insert("1.0", "⏳ Scansione rapida in corso...")
         threading.Thread(target=self.run_parallel_scan, daemon=True).start()
 
     def run_parallel_scan(self):
         def get_models():
-            combined = []
-            pref = self.model_var.get()
-            if pref: combined.append(pref)
+            combined = [self.model_var.get()]
             try:
                 r = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={self.config['api_key']}", timeout=5)
                 g_mods = [m['name'].replace('models/', '') for m in r.json().get('models', []) if 'generateContent' in m['supportedGenerationMethods']]
-                g_mods.sort(key=lambda x: ("2.0" in x, "flash" in x), reverse=True)
-                combined.extend(g_mods[:3])
+                # Priorità: 3 > 2.0 > 1.5 > flash
+                g_mods.sort(key=lambda x: ("3" in x, "2.0" in x, "flash" in x), reverse=True)
+                combined.extend(g_mods[:5])
             except: pass
             if self.config.get("deepseek_key"):
                 try:
                     r = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
                     ds_mods = [m['id'] for m in r.json().get('data', []) if ":free" in m.get('id', '')]
-                    ds_mods.sort(key=lambda x: ("deepseek" in x or "llama-3.3" in x), reverse=True)
+                    ds_mods.sort(key=lambda x: ("deepseek" in x or "gpt" in x), reverse=True)
                     combined.extend(ds_mods[:5])
                 except: pass
             res = []
             for m in combined:
-                if m not in res:
+                if m and m not in res:
                     res.append(m)
                     if m not in self.model_status: self.model_status[m] = "unknown"
             return res
-
         models = get_models()
         self.root.after(0, self.refresh_display)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            executor.map(self.test_single_model, models)
-        self.root.after(0, lambda: self.status_label.config(text="🏁 Scansione rapida completata", fg="gray"))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            ex.map(self.test_single_model, models)
 
     def test_single_model(self, m_name):
-        self.model_status[m_name] = "testing"
-        self.root.after(0, self.refresh_display)
-        prompt = f"Riscrivi in 6 varianti JSON (it, en): normal, formal, technical, ironic, funny, debate. Testo: {self.original_text}"
+        self.model_status[m_name] = "testing"; self.root.after(0, self.refresh_display)
+        prompt = f"Riscrivi in 6 varianti JSON (it, en) con chiavi: normal, formal, technical, ironic, funny, debate. Testo: {self.original_text}. Restituisci SOLO JSON."
         try:
             if "/" not in m_name:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent?key={self.config['api_key']}"
-                resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=8)
+                resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
                 h = resp.headers
                 self.last_quota_info = {"model": m_name, "limit": h.get('x-ratelimit-limit-requests', '15'), "remaining": h.get('x-ratelimit-remaining-requests', 'N/D'), "reset": h.get('x-ratelimit-reset-requests', 'N/D')}
                 res_text = resp.json()['candidates'][0]['content']['parts'][0]['text']
             else:
-                resp = requests.post(url="https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {self.config['deepseek_key']}", "X-Title": "Romolo AI"}, json={"model": m_name, "messages": [{"role": "user", "content": prompt}]}, timeout=10)
-                h = resp.headers
-                self.last_quota_info = {"model": m_name, "limit": 'Variabile (Free)', "remaining": 'Disponibile', "reset": 'N/D'}
+                resp = requests.post(url="https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {self.config['deepseek_key']}", "X-Title": "Romolo AI"}, json={"model": m_name, "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                self.last_quota_info = {"model": m_name, "limit": 'Free', "remaining": 'N/D', "reset": 'N/D'}
                 res_text = resp.json()['choices'][0]['message']['content']
-
             raw = re.sub(r'```json\s*|\s*```', '', res_text.strip())
             start, end = raw.find('{'), raw.rfind('}')
             res = json.loads(raw[start:end+1])
-            self.all_results[m_name] = res
-            self.model_status[m_name] = "ok"
+            self.all_results[m_name] = res; self.model_status[m_name] = "ok"
             if not self.variants or self.model_var.get() == m_name:
-                self.variants = res
-                self.root.after(0, lambda: [self.model_var.set(m_name), self.set_style('normal')])
+                self.variants = res; self.root.after(0, lambda: [self.model_var.set(m_name), self.set_style('normal')])
         except: self.model_status[m_name] = "error"
         self.root.after(0, self.refresh_display)
 
@@ -283,6 +265,4 @@ if __name__ == "__main__":
             if c and len(c.strip()) > 5: txt = c
         except: pass
     if not txt: txt = "Scrivi o incolla qui il testo..."
-    root = tk.Tk()
-    app = RomoloApp(root, txt)
-    root.mainloop()
+    root = tk.Tk(); app = RomoloApp(root, txt); root.mainloop()
