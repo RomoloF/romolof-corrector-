@@ -60,7 +60,7 @@ class RomoloApp:
         self.model_menu = ttk.Combobox(header, textvariable=self.model_var, values=self.config["available_models"], width=25)
         self.model_menu.pack(side="left", padx=5)
         
-        tk.Button(header, text="🚀 Trova Modello", command=self.auto_find_working_model, bg="#34a853", fg="white", relief="flat").pack(side="left", padx=5)
+        tk.Button(header, text="🚀 Trova Modello Libero", command=self.auto_find_working_model, bg="#34a853", fg="white", relief="flat").pack(side="left", padx=5)
         
         # Nuovo tasto Incolla
         tk.Button(header, text="📋 Incolla", command=self.paste_from_clipboard, bg="#fbbc04", fg="black", relief="flat").pack(side="left", padx=5)
