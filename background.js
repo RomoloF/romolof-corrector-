@@ -43,7 +43,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         if (index >= uniqueModels.length) throw new Error("Tutti i modelli hanno la quota esaurita.");
         
         const currentModel = uniqueModels[index];
-        const prompt = `Agisci come Editor Senior. Analizza il testo e produci versioni perfezionate in JSON: { "it": {...}, "en": {...} }. Testo: "${selectedText}"`;
+        const prompt = `Agisci come Editor Senior e Scrittore Creativo. Analizza il testo e produci 6 versioni in JSON (it ed en) con chiavi: normal, formal, technical, ironic, funny, debate. Testo: "${selectedText}"`;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
         
         try {
@@ -154,6 +154,9 @@ function showComparisonModal(variants) {
       <button class="g-tab active" data-s="normal">Normale</button>
       <button class="g-tab" data-s="formal">Formale</button>
       <button class="g-tab" data-s="technical">Tecnico</button>
+      <button class="g-tab" data-s="ironic">Ironico</button>
+      <button class="g-tab" data-s="funny">Comico</button>
+      <button class="g-tab" data-s="debate">Critico</button>
     </div>
     <div class="g-content">
       <textarea class="g-textarea" id="g-text"></textarea>

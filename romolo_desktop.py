@@ -75,7 +75,11 @@ class RomoloApp:
         tab_frame = tk.Frame(self.root, bg="#dee2e6")
         tab_frame.pack(fill="x")
         self.tabs = {}
-        for s_id, label in [('normal', 'Normale'), ('formal', 'Formale'), ('technical', 'Tecnico')]:
+        modalita = [
+            ('normal', 'Normale'), ('formal', 'Formale'), ('technical', 'Tecnico'),
+            ('ironic', 'Ironico'), ('funny', 'Comico'), ('debate', 'Contraddittorio')
+        ]
+        for s_id, label in modalita:
             btn = tk.Button(tab_frame, text=label, command=lambda s=s_id: self.set_style(s), relief="flat")
             btn.pack(side="left", expand=True, fill="x")
             self.tabs[s_id] = btn
@@ -145,10 +149,18 @@ class RomoloApp:
             self.root.after(0, lambda: self.status_label.config(text=f"⏳ Provo {current_model_name}...", fg="blue"))
 
             prompt = f"""
-              Agisci come Editor Senior. Riscrivi il testo con Self-Correction.
-              Output richiesto: JSON con chiavi "it" e "en", ognuna con "normal", "formal", "technical".
-              Testo: "{text}"
-              Restituisci SOLO il JSON puro.
+              Agisci come Editor Senior e Scrittore Creativo. Riscrivi il testo fornito.
+              Output richiesto: UN SOLO OGGETTO JSON con chiavi "it" e "en".
+              Ogni lingua deve avere queste 6 varianti:
+              - "normal": Corretto e fluido.
+              - "formal": Professionale e diplomatico.
+              - "technical": Preciso e rigoroso.
+              - "ironic": Sarcastico e pungente.
+              - "funny": Divertente e scherzoso.
+              - "debate": Argomentazione contraria o critica al testo originale.
+              
+              Testo da elaborare: "{text}"
+              Restituisci ESCLUSIVAMENTE il JSON puro.
             """
             try:
                 model = genai.GenerativeModel(current_model_name)
@@ -166,10 +178,17 @@ class RomoloApp:
                 self.root.after(0, lambda: self.set_style('normal'))
                 self.root.after(0, lambda: self.status_label.config(text=f"✅ Pronto ({current_model_name})", fg="green"))
             except Exception as e:
-                if "429" in str(e) or "Vuoto" in str(e):
+                err_msg = str(e)
+                if "429" in err_msg or "Vuoto" in err_msg:
                     self.root.after(0, lambda: attempt_analysis(models_to_try, idx + 1))
                 else:
-                    self.root.after(0, lambda: self.status_label.config(text="❌ Errore API", fg="red"))
+                    # Copia l'errore negli appunti automaticamente
+                    try: pyperclip.copy(err_msg)
+                    except: pass
+                    
+                    self.root.after(0, lambda: self.status_label.config(text="❌ Errore (Copiato negli appunti)", fg="red"))
+                    self.root.after(0, lambda: self.text_area.delete("1.0", tk.END))
+                    self.root.after(0, lambda: self.text_area.insert("1.0", f"⚠️ ERRORE API DETTAGLIATO (Copiato negli appunti):\n\n{err_msg}"))
 
         def run_full_scan():
             models = get_all_working_models()
